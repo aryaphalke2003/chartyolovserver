@@ -1,0 +1,10 @@
+__pycache__/
+Include/
+Lib/
+Scripts/
+share/
+CITATION.cff
+CONTRIBUTING.md
+LICENSE
+pyenv.cfg
+runs/
