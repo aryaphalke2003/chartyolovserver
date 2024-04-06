@@ -129,17 +129,54 @@ def detect_objects():
 
     image_file = request.files['image']
     
-    
+
 
     # Save uploaded image to a temporary file
-    image_path = './data/images/temp_image.jpg'
+    image_path = './yolov5/data/images/temp_image.jpg'
     image_file.save(image_path)
 
+    # Change directory to yolov5
+    os.chdir('./yolov5')
+    image_path = './data/images/temp_image.jpg'
+    # Run YOLOv5 detection script
+    yolo_command = ['python', 'detect.py', '--weights', 'runs/train/PROPOSED/weights/best.pt', '--source', image_path, '--save-txt', '--save-crop']
+    subprocess.run(yolo_command)
+
+    # Move back to the previous directory
+    os.chdir('..')
+
+    # Path to the output folder of YOLOv5
+    output_folder = './yolov5/runs/detect'
+    
+    
+    latest_out_folder = get_latest_exp_folder(output_folder)
+    temp_path = os.path.join(latest_out_folder, 'crops/')
+   
+
+    # Check if Chart title folder is present
+    chart_title_folder = os.path.join(temp_path, 'Chart')
+    if os.path.exists(chart_title_folder):
+        # Move images from Chart title folder to root's data/images/
+        image_list = os.listdir(chart_title_folder)
+        if image_list:
+            image_list.sort(key=lambda x: os.path.getmtime(os.path.join(chart_title_folder, x)), reverse=True)
+            # Move the latest added image to the data/images/ directory with the name 'temp_image.jpg'
+            latest_image = image_list[0]
+            image_to_move = os.path.join(chart_title_folder, latest_image)
+            shutil.copy(image_to_move, './data/images/temp_image.jpg')
+
+            # Run the detect.py command on the moved image
+            image_path = './data/images/temp_image.jpg'
+            command = ['python', 'detect.py', '--weights', 'runs/train/Proposed/weights/best.pt', '--source', image_path, '--save-crop']
+            result = subprocess.run(command, capture_output=True, text=True)
+    else:
+        return jsonify({'output': "No chart found"})
+    
     # Call YOLOv5 detection script with the uploaded image
     command = ['python', 'detect.py', '--weights', 'runs/train/Proposed/weights/best.pt', '--source', image_path, '--save-crop']
     result = subprocess.run(command, capture_output=True, text=True)
     
-
+    # getchartcat(image_path)
     # Run OCR on the latest exp folder
     ocr_output = run_ocr_on_latest_exp_folder()
     
@@ -149,9 +186,9 @@ def detect_objects():
     with open(temp_image_path, "rb") as image_file:
         encoded_image = base64.b64encode(image_file.read()).decode('utf-8')
 
-    return jsonify({'output': ocr_output, 'image_data': encoded_image})
+    # return jsonify({'output': ocr_output, 'image_data': encoded_image})
 
-    # return jsonify({'output': ocr_output})
+    return jsonify({'output': ocr_output})
 
 
 def process_single_sample(img_path):
@@ -312,9 +349,47 @@ def apply_ocr(image_path):
     return text
 
 
+def getchartcat(filepath):
+    import tensorflow as tf
+    from tensorflow import keras
+    mod = tf.keras.models.load_model("text_recognition.h5")
+    display_labels1=['area','heatmap','horizontal_bar','horizontal_interval','line','manhattan','map','pie','scatter','scatter-line','surface','venn','vertical_bar','vertical_box','vertical_interval']
 
 
+    def preprocess_image(image):
+        # Resize image to match model input shape
+        resized_image = image.resize((224, 224))
+        # Convert image to numpy array
+        img_array = np.asarray(resized_image)
+        # Normalize pixel values to range [0, 1]
+        img_array = img_array / 255.0
+        # Expand dimensions to match model input shape
+        img_array = np.expand_dims(img_array, axis=0)
+        return img_array
 
+    img = Image.open(filepath)
+    img_array = preprocess_image(img)
+
+    # Perform inference using the model
+    predictions = mod.predict(img_array)
+    predictions_list = predictions.tolist()
+    # print(predictions_list)
+    predictions_array = np.array(predictions_list)
+
+    print(predictions_array)
+
+    # Find the index of the maximum probability
+    max_prob_index = np.argmax(predictions_array)
+    predicted_label = display_labels1[max_prob_index]
+
+    print("predicted: ", predicted_label)
+    # print(predicted_label)
+
+    # Print labels and probabilities
+    for label, probability in zip(display_labels1, predictions_array[0]):
+        print(f"{label}: {probability}")
+
+    return predicted_label
 
 
 
