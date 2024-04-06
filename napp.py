@@ -58,6 +58,7 @@ characters_train = [' ', '!', '"', '#', '$', '%', '&', "'", '(', ')', '*', '+', 
 characters = characters_train 
 
 
+
 class CTCLayer(layers.Layer):
 
     def __init__(self, name=None):
@@ -110,12 +111,16 @@ def create_inference_model(training_model):
 
 
 custom_objects = {'CTCLayer': CTCLayer}
+custom_objects_1 = {}
 
 # Load the model with custom objects
 with tf.keras.utils.custom_object_scope(custom_objects):
     model_new = load_model('text_recognition.h5')
+    
+chart_recog_model = load_model('model.h5')
 
 inference_model = create_inference_model(model_new)
+
 
 
 @app.route('/')
@@ -160,15 +165,10 @@ def detect_objects():
         image_list = os.listdir(chart_title_folder)
         if image_list:
             image_list.sort(key=lambda x: os.path.getmtime(os.path.join(chart_title_folder, x)), reverse=True)
-            # Move the latest added image to the data/images/ directory with the name 'temp_image.jpg'
             latest_image = image_list[0]
             image_to_move = os.path.join(chart_title_folder, latest_image)
             shutil.copy(image_to_move, './data/images/temp_image.jpg')
-
-            # Run the detect.py command on the moved image
             image_path = './data/images/temp_image.jpg'
-            command = ['python', 'detect.py', '--weights', 'runs/train/Proposed/weights/best.pt', '--source', image_path, '--save-crop']
-            result = subprocess.run(command, capture_output=True, text=True)
     else:
         return jsonify({'output': "No chart found"})
     
@@ -176,7 +176,7 @@ def detect_objects():
     command = ['python', 'detect.py', '--weights', 'runs/train/Proposed/weights/best.pt', '--source', image_path, '--save-crop']
     result = subprocess.run(command, capture_output=True, text=True)
     
-    # getchartcat(image_path)
+    
     # Run OCR on the latest exp folder
     ocr_output = run_ocr_on_latest_exp_folder()
     
@@ -187,31 +187,20 @@ def detect_objects():
         encoded_image = base64.b64encode(image_file.read()).decode('utf-8')
 
     # return jsonify({'output': ocr_output, 'image_data': encoded_image})
+    
+    plabel = getchartcat(image_path)
+    print("returning")
 
-    return jsonify({'output': ocr_output})
+    return jsonify({'class': plabel,'output': ocr_output})
 
 
 def process_single_sample(img_path):
     img_width = 128
     img_height = 32
-    # 1. Read image
     img = tf.io.read_file(img_path)
-
-    # 2. Decode and convert to grayscale
     img = tf.io.decode_png(img, channels=1)
-
-    # 3. Convert to float32 in [0, 1] range
     img = tf.image.convert_image_dtype(img, tf.float32)
-
-    # 4. Resize to the desired size
     img = tf.image.resize(img, [img_height, img_width])
-   # 5. Transpose the image because we want the time
-    #dimension to correspond to the width of the image.
-   #
-    #img = tf.transpose(img, perm=[1, 0, 2])
-#     # 6. Map the characters in label to numbers
-    #label = char_to_num(tf.strings.unicode_split(label, input_encoding="UTF-8"))
-   
     return img
 
 def predText(img): 
@@ -243,13 +232,6 @@ def predText(img):
     return out
 
 def correct_skew(image):
-    # Read the image
-  #  image = cv2.imread(image_path)
-   
-   # if image is None:
-       # print("Image not loaded")
-       # return image
-   
     # Convert to grayscale
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
    
@@ -325,12 +307,6 @@ def run_ocr_on_latest_exp_folder():
     return ocr_results
 
 def obtain_recog(img):
-    # coordinate=coordinate.split(" ")
-    # x_min=int(coordinate[0])
-    # y_min=int(coordinate[1])
-    # x_max=int(coordinate[2])
-    # y_max=int(coordinate[3])
-    # im1=img[y_min:y_max,x_min:x_max]
     im1=correct_skew(img)
     cv2.imwrite('as.png',im1)
     img=process_single_sample('as.png')
@@ -352,7 +328,8 @@ def apply_ocr(image_path):
 def getchartcat(filepath):
     import tensorflow as tf
     from tensorflow import keras
-    mod = tf.keras.models.load_model("text_recognition.h5")
+    print("in getch")
+    mod = chart_recog_model
     display_labels1=['area','heatmap','horizontal_bar','horizontal_interval','line','manhattan','map','pie','scatter','scatter-line','surface','venn','vertical_bar','vertical_box','vertical_interval']
 
 
@@ -369,7 +346,7 @@ def getchartcat(filepath):
 
     img = Image.open(filepath)
     img_array = preprocess_image(img)
-
+    print("here")
     # Perform inference using the model
     predictions = mod.predict(img_array)
     predictions_list = predictions.tolist()
@@ -383,12 +360,8 @@ def getchartcat(filepath):
     predicted_label = display_labels1[max_prob_index]
 
     print("predicted: ", predicted_label)
-    # print(predicted_label)
-
-    # Print labels and probabilities
     for label, probability in zip(display_labels1, predictions_array[0]):
         print(f"{label}: {probability}")
-
     return predicted_label
 
 
